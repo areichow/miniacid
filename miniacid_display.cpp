@@ -199,7 +199,7 @@ void MiniAcidDisplay::update() {
 
   drawMutesSection(margin, content_h + margin, gfx_.width() - margin * 2, gfx_.height() - content_h - margin );
 
-  int hint_w = textWidth(gfx_, "K< 0/0 >L");
+  int hint_w = textWidth(gfx_, "[< 0/0 >]");
   drawPageHint(gfx_.width() - hint_w - margin, margin);
 
   gfx_.flush();
@@ -233,7 +233,7 @@ void MiniAcidDisplay::drawSplashScreen() {
 
   gfx_.setFont(GfxFont::kFont5x7);
   int info_y = start_y + title_h + gap;
-  centerText(info_y, "Use keys K/L to move around", COLOR_WHITE);
+  centerText(info_y, "Use keys [ ] to move around", COLOR_WHITE);
   centerText(info_y + small_h, "Space - to start/stop sound", COLOR_WHITE);
 
   gfx_.flush();
@@ -412,12 +412,12 @@ void MiniAcidDisplay::drawHelpPage(int x, int y, int w, int h, int helpPage) {
     left_y += lh;
     item(left_x, left_y, "SPACE", "play/stop", IGfxColor::Green());
     left_y += lh;
-    item(left_x, left_y, "[ / ]", "BPM -/+", IGfxColor::Cyan());
+    item(left_x, left_y, "K / L", "BPM -/+", IGfxColor::Cyan());
     left_y += lh;
 
     heading(left_x, left_y, "Pages");
     left_y += lh;
-    item(left_x, left_y, "K / L", "prev/next page", COLOR_LABEL);
+    item(left_x, left_y, "[ / ]", "prev/next page", COLOR_LABEL);
     left_y += lh;
 
     heading(left_x, left_y, "Playback");
@@ -652,7 +652,7 @@ void MiniAcidDisplay::drawDrumLane(int x, int y, int w, int h) {
 
 void MiniAcidDisplay::drawPageHint(int x, int y) {
   char buf[32];
-  snprintf(buf, sizeof(buf), "K< %d/%d >L", page_index_ + 1, kPageCount);
+  snprintf(buf, sizeof(buf), "[< %d/%d >]", page_index_ + 1, kPageCount);
   gfx_.setTextColor(COLOR_LABEL);
   gfx_.drawText(x, y, buf);
   gfx_.setTextColor(COLOR_WHITE);

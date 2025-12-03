@@ -95,10 +95,10 @@ void loop() {
         if (g_miniDisplay) g_miniDisplay->dismissSplash();
         drawUI();
       } else if (c == '[') {
-        g_miniAcid.setBpm(g_miniAcid.bpm() - 5.0f);
+        if (g_miniDisplay) g_miniDisplay->previousPage();
         drawUI();
       } else if (c == ']') {
-        g_miniAcid.setBpm(g_miniAcid.bpm() + 5.0f);
+        if (g_miniDisplay) g_miniDisplay->nextPage();
         drawUI();
       } else if (c == 'i' || c == 'I') {
         g_miniAcid.randomize303Pattern(0);
@@ -167,10 +167,10 @@ void loop() {
         g_miniAcid.toggleMuteClap();
         drawUI();
       } else if (c == 'k' || c == 'K') {
-        if (g_miniDisplay) g_miniDisplay->previousPage();
+        g_miniAcid.setBpm(g_miniAcid.bpm() - 5.0f);
         drawUI();
       } else if (c == 'l' || c == 'L') {
-        if (g_miniDisplay) g_miniDisplay->nextPage();
+        g_miniAcid.setBpm(g_miniAcid.bpm() + 5.0f);
         drawUI();
       }
       else if (c == ' ')

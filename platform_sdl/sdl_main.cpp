@@ -61,15 +61,11 @@ static void handleEvents(AppState& s) {
         }
         SDL_UnlockAudioDevice(s.audio.device);
       } else if (sc == SDL_SCANCODE_LEFTBRACKET) {
-        SDL_LockAudioDevice(s.audio.device);
-        s.audio.synth.setBpm(s.audio.synth.bpm() - 5.0f);
-        SDL_UnlockAudioDevice(s.audio.device);
-        printf("BPM: %.1f\n", s.audio.synth.bpm());
+        if (s.ui) s.ui->previousPage();
+        if (s.ui) s.ui->update();
       } else if (sc == SDL_SCANCODE_RIGHTBRACKET) {
-        SDL_LockAudioDevice(s.audio.device);
-        s.audio.synth.setBpm(s.audio.synth.bpm() + 5.0f);
-        SDL_UnlockAudioDevice(s.audio.device);
-        printf("BPM: %.1f\n", s.audio.synth.bpm());
+        if (s.ui) s.ui->nextPage();
+        if (s.ui) s.ui->update();
       } else if (sc == SDL_SCANCODE_I) {
         SDL_LockAudioDevice(s.audio.device);
         s.audio.synth.randomize303Pattern(0);
@@ -200,11 +196,15 @@ static void handleEvents(AppState& s) {
         SDL_UnlockAudioDevice(s.audio.device);
         printf("Clap %s\n", muted ? "muted" : "unmuted");
       } else if (sc == SDL_SCANCODE_K) {
-        if (s.ui) s.ui->previousPage();
-        if (s.ui) s.ui->update();
+        SDL_LockAudioDevice(s.audio.device);
+        s.audio.synth.setBpm(s.audio.synth.bpm() - 5.0f);
+        SDL_UnlockAudioDevice(s.audio.device);
+        printf("BPM: %.1f\n", s.audio.synth.bpm());
       } else if (sc == SDL_SCANCODE_L) {
-        if (s.ui) s.ui->nextPage();
-        if (s.ui) s.ui->update();
+        SDL_LockAudioDevice(s.audio.device);
+        s.audio.synth.setBpm(s.audio.synth.bpm() + 5.0f);
+        SDL_UnlockAudioDevice(s.audio.device);
+        printf("BPM: %.1f\n", s.audio.synth.bpm());
       }
     }
   }

@@ -14,8 +14,8 @@ MiniAcid is a tiny acid groovebox for the M5Stack Cardputer. It runs two squelch
 3) Jam, tweak synths, randomize, and mute on the fly
 
 ### Keyboard & button cheatsheet
-- **Transport:** `SPACE` or Cardputer `BtnA` toggles play/stop. `[` / `]` BPM down/up.
-- **Navigation:** `K` / `L` previous/next page. (Press `ENTER` to dismiss the splash/help.)
+- **Transport:** `SPACE` or Cardputer `BtnA` toggles play/stop. `K` / `L` BPM down/up.
+- **Navigation:** `[` / `]` previous/next page. (Press `ENTER` to dismiss the splash/help.)
 - **Sequencer randomize:** `I` random 303A pattern, `O` random 303B pattern, `P` random drum pattern.
 - **Sound shaping (on the active 303 page):**
   - `A` / `Z` cutoff up/down
