@@ -8,6 +8,8 @@
 #include <filesystem>
 #endif
 
+#include "scenes.h"
+
 #ifdef __EMSCRIPTEN__
 #include <emscripten/emscripten.h>
 
@@ -167,6 +169,19 @@ bool SceneStorageSdl::readScene(std::string& out) {
              std::istreambuf_iterator<char>());
   return !out.empty();
 #endif
+}
+
+bool SceneStorageSdl::writeScene(const SceneManager& manager) {
+  std::string out;
+  bool ok = manager.writeSceneJson(out);
+  if (!ok) return false;
+  return writeScene(out);
+}
+
+bool SceneStorageSdl::readScene(SceneManager& manager) {
+  std::string serialized;
+  if (!readScene(serialized)) return false;
+  return manager.loadScene(serialized);
 }
 
 bool SceneStorageSdl::writeScene(const std::string& data) {

@@ -10,8 +10,8 @@
 
 #include "sdl_display.h"
 #include "../cardputer_display.h"
-#include "../miniacid_display.h"
-#include "../dsp_engine.h"
+#include "../src/ui/miniacid_display.h"
+#include "../src/dsp/miniacid_engine.h"
 #include "scene_storage_sdl.h"
 
 struct AudioContext {

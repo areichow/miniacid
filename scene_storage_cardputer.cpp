@@ -133,8 +133,9 @@ bool SceneStorageCardputer::writeScene(const std::string& data) {
   Serial.println("Removing old scene file if it exists...");
   Serial.flush();
   std::string path = currentScenePath();
-  SD.remove(path.c_str());
-  Serial.println("Old scene file removed.");
+  bool removed = SD.remove(path.c_str());
+  Serial.println("Old scene file removed status:");
+  Serial.println(removed);
   Serial.flush();
 
   persistCurrentSceneName();
@@ -186,13 +187,14 @@ bool SceneStorageCardputer::writeScene(const SceneManager& manager) {
   Serial.println("Writing scene (streaming) to SD card...");
   persistCurrentSceneName();
   std::string path = currentScenePath();
-  SD.remove(path.c_str());
+  bool removed = SD.remove(path.c_str());
+  Serial.printf("Removed old scene file: %s\n", removed ? "yes" : "no");
   File file = SD.open(path.c_str(), FILE_WRITE);
   if (!file) return false;
 
   bool ok = manager.writeSceneJson(file);
   file.close();
-  Serial.printf("Streaming write %s\n", ok ? "succeeded" : "failed");
+  Serial.printf("Streaming write %s\n to %s\n", ok ? "succeeded" : "failed", path.c_str());
   return ok;
 }
 

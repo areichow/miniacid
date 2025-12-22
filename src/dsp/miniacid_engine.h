@@ -4,8 +4,11 @@
 #include <stdint.h>
 #include <vector>
 #include <string>
+
 #include "scene_storage.h"
 #include "scenes.h"
+#include "mini_tb303.h"
+#include "mini_drumvoices.h"
 
 // ===================== Audio config =====================
 
@@ -16,182 +19,6 @@ static const int NUM_303_VOICES = 2;
 static const int NUM_DRUM_VOICES = DrumPatternSet::kVoices;
 
 // ===================== Parameters =====================
-
-enum class TB303ParamId : uint8_t {
-  Cutoff = 0,
-  Resonance,
-  EnvAmount,
-  EnvDecay,
-  MainVolume,
-  Count
-};
-
-class Parameter {
-public:
-  Parameter();
-  Parameter(const char* label, const char* unit, float minValue, float maxValue, float defaultValue, float step);
-
-  const char* label() const;
-  const char* unit() const;
-  float value() const;
-  float min() const;
-  float max() const;
-  float step() const;
-  float normalized() const;
-
-  void setValue(float v);
-  void addSteps(int steps);
-  void setNormalized(float norm);
-  void reset();
-
-private:
-  const char* _label;
-  const char* _unit;
-  float min_;
-  float max_;
-  float default_;
-  float step_;
-  float value_;
-};
-
-// ===================== TB-303 style voice =====================
-
-class ChamberlinFilter {
-public:
-  explicit ChamberlinFilter(float sampleRate);
-  void reset();
-  void setSampleRate(float sr);
-  float process(float input, float cutoffHz, float resonance);
-private:
-  float _lp;
-  float _bp;
-  float _sampleRate;
-};
-
-class TB303Voice {
-public:
-  explicit TB303Voice(float sampleRate);
-
-  void reset();
-  void setSampleRate(float sampleRate);
-  void startNote(float freqHz, bool accent, bool slideFlag);
-  void release();
-  float process();
-  const Parameter& parameter(TB303ParamId id) const;
-  void setParameter(TB303ParamId id, float value);
-  void adjustParameter(TB303ParamId id, int steps);
-  float parameterValue(TB303ParamId id) const;
-
-private:
-  float oscSaw();
-  float svfProcess(float input);
-  void initParameters();
-
-  float phase;
-  float freq;       // current frequency (Hz)
-  float targetFreq; // slide target
-  float slideSpeed; // how fast we slide toward target
-  float env;        // filter envelope value
-  bool gate;        // note on/off
-  bool slide;       // slide flag for next note
-  float amp;        // amplitude
-
-  float sampleRate;
-  float invSampleRate;
-  float nyquist;
-
-  Parameter params[static_cast<int>(TB303ParamId::Count)];
-  ChamberlinFilter filter;
-};
-
-enum class DrumParamId : uint8_t {
-  MainVolume = 0,
-  Count
-};
-
-class DrumSynthVoice {
-public:
-  explicit DrumSynthVoice(float sampleRate);
-
-  void reset();
-  void setSampleRate(float sampleRate);
-  void triggerKick();
-  void triggerSnare();
-  void triggerHat();
-  void triggerOpenHat();
-  void triggerMidTom();
-  void triggerHighTom();
-  void triggerRim();
-  void triggerClap();
-
-  float processKick();
-  float processSnare();
-  float processHat();
-  float processOpenHat();
-  float processMidTom();
-  float processHighTom();
-  float processRim();
-  float processClap();
-
-  const Parameter& parameter(DrumParamId id) const;
-  void setParameter(DrumParamId id, float value);
-
-private:
-  float frand();
-
-  float kickPhase;
-  float kickFreq;
-  float kickEnvAmp;
-  float kickEnvPitch;
-  bool kickActive;
-
-  float snareEnvAmp;
-  float snareToneEnv;
-  bool snareActive;
-  float snareBp;
-  float snareLp;
-  float snareTonePhase;
-  float snareTonePhase2;
-
-  float hatEnvAmp;
-  float hatToneEnv;
-  bool hatActive;
-  float hatHp;
-  float hatPrev;
-  float hatPhaseA;
-  float hatPhaseB;
-
-  float openHatEnvAmp;
-  float openHatToneEnv;
-  bool openHatActive;
-  float openHatHp;
-  float openHatPrev;
-  float openHatPhaseA;
-  float openHatPhaseB;
-
-  float midTomPhase;
-  float midTomEnv;
-  bool midTomActive;
-
-  float highTomPhase;
-  float highTomEnv;
-  bool highTomActive;
-
-  float rimPhase;
-  float rimEnv;
-  bool rimActive;
-
-  float clapEnv;
-  float clapTrans;
-  float clapNoise;
-  bool clapActive;
-  float clapDelay;
-
-  float sampleRate;
-  float invSampleRate;
-
-  Parameter params[static_cast<int>(DrumParamId::Count)];
-};
 
 class TempoDelay {
 public:
@@ -393,3 +220,8 @@ public:
   static void generateRandom303Pattern(SynthPattern& pattern);
   static void generateRandomDrumPattern(DrumPatternSet& patternSet);
 };
+
+inline Parameter& MiniAcid::miniParameter(MiniAcidParamId id) {
+  return params[static_cast<int>(id)];
+}
+

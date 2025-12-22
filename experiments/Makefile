@@ -17,8 +17,10 @@ ifeq ($(strip $(SDL_GFX_CFLAGS)),)
   SDL_GFX_LIBS := -L/opt/homebrew/lib -lSDL2_gfx
 endif
 
-TARGET := miniacid
-SOURCES := ../src/dsp/mini_tb303.cpp ../src/dsp/mini_drumvoices.cpp ../src/dsp/miniacid_engine.cpp ../src/ui/miniacid_display.cpp ../src/ui/pages/help_page.cpp ../src/ui/pages/tb303_params_page.cpp ../src/ui/pages/waveform_page.cpp ../src/ui/pages/pattern_edit_page.cpp ../src/ui/pages/drum_sequencer_page.cpp ../src/ui/pages/song_page.cpp ../src/ui/pages/project_page.cpp ../cardputer_display.cpp ../scenes.cpp ../json_evented.cpp sdl_main.cpp sdl_display.cpp scene_storage_sdl.cpp 
+# TARGET := experiment1
+# SOURCES := experiment1.cpp
+TARGET := experiment2
+SOURCES := experiment2.cpp
 
 ROOT := $(abspath ..)
 DOCKER ?= docker

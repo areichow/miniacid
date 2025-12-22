@@ -1,5 +1,7 @@
 // modeled after a minimal subset from https://docs.m5stack.com/en/arduino/m5gfx/m5gfx_functions
 #pragma once
+#ifndef MINIACID_DISPLAY_H
+#define MINIACID_DISPLAY_H
 #include <cstdint>
 class IGfxColor {
 public:
@@ -35,7 +37,7 @@ public:
     static constexpr IGfxColor Magenta() { return IGfxColor(0xFF00FF); }
     static constexpr IGfxColor Gray()    { return IGfxColor(0x808080); }
     static constexpr IGfxColor Orange()  { return IGfxColor(0xFFA500); }
-    static constexpr IGfxColor Purple()  { return IGfxColor(0x800080); }
+  static constexpr IGfxColor Purple()  { return IGfxColor(0x800080); }
 
 private:
     uint32_t color_;  // Stored as 24-bit RGB888 (0xRRGGBB)
@@ -83,3 +85,5 @@ public:
     virtual int height() const = 0;
     virtual ~IGfx() = default;
 };
+
+#endif // MINIACID_DISPLAY_H

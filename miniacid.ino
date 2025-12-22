@@ -3,11 +3,11 @@
 #include <M5Cardputer.h>
 #include <SD.h>
 #include <SPI.h>
-#include "dsp_engine.h"
+#include "src/dsp/miniacid_engine.h"
 #include "cardputer_display.h"
 #include <cstdarg>
 #include <cstdio>
-#include "miniacid_display.h"
+#include "src/ui/miniacid_display.h"
 #include "miniacid_encoder8.h"
 #include "scene_storage_cardputer.h"
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "dsp_engine.h"
+#include "src/dsp/miniacid_engine.h"
 #include "UNIT_8ENCODER.h"
 
 class Encoder8Miniacid {

@@ -1,10 +1,48 @@
 #pragma once
 
 #include <stdint.h>
+#include <cstdio>
+#include <cstring>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include "ArduinoJson-v7.4.2.h"
 #include "json_evented.h"
+
+namespace scene_json_detail {
+inline bool writeChunk(std::string& writer, const char* data, size_t len) {
+  writer.append(data, len);
+  return true;
+}
+
+template <typename Writer>
+auto writeChunkImpl(Writer& writer, const char* data, size_t len, int)
+    -> decltype(writer.write(reinterpret_cast<const uint8_t*>(data), len), bool()) {
+  size_t written = writer.write(reinterpret_cast<const uint8_t*>(data), len);
+  return written == len;
+}
+
+template <typename Writer>
+auto writeChunkImpl(Writer& writer, const char* data, size_t len, long)
+    -> decltype(writer.write(data, len), bool()) {
+  auto written = writer.write(data, len);
+  return static_cast<size_t>(written) == len;
+}
+
+template <typename Writer>
+auto writeChunkImpl(Writer& writer, const char* data, size_t len, ...)
+    -> decltype(writer.write(static_cast<uint8_t>(0)), bool()) {
+  for (size_t i = 0; i < len; ++i) {
+    if (writer.write(static_cast<uint8_t>(data[i])) != 1) return false;
+  }
+  return true;
+}
+
+template <typename Writer>
+bool writeChunk(Writer& writer, const char* data, size_t len) {
+  return writeChunkImpl(writer, data, len, 0);
+}
+} // namespace scene_json_detail
 
 struct DrumStep {
   bool hit;
@@ -268,9 +306,165 @@ private:
 
 template <typename TWriter>
 bool SceneManager::writeSceneJson(TWriter&& writer) const {
-  ArduinoJson::JsonDocument doc;
-  buildSceneDocument(doc);
-  return ArduinoJson::serializeJson(doc, std::forward<TWriter>(writer)) > 0;
+  using WriterType = typename std::remove_reference<TWriter>::type;
+  WriterType& out = writer;
+
+  auto writeChunk = [&](const char* data, size_t len) -> bool {
+    return scene_json_detail::writeChunk(out, data, len);
+  };
+  auto writeLiteral = [&](const char* literal) -> bool {
+    return writeChunk(literal, std::strlen(literal));
+  };
+  auto writeChar = [&](char c) -> bool {
+    return writeChunk(&c, 1);
+  };
+  auto writeBool = [&](bool value) -> bool {
+    return writeLiteral(value ? "true" : "false");
+  };
+  auto writeInt = [&](int value) -> bool {
+    char buffer[16];
+    int written = std::snprintf(buffer, sizeof(buffer), "%d", value);
+    if (written < 0 || written >= static_cast<int>(sizeof(buffer))) return false;
+    return writeChunk(buffer, static_cast<size_t>(written));
+  };
+  auto writeFloat = [&](float value) -> bool {
+    char buffer[24];
+    int written = std::snprintf(buffer, sizeof(buffer), "%.6g", static_cast<double>(value));
+    if (written < 0 || written >= static_cast<int>(sizeof(buffer))) return false;
+    return writeChunk(buffer, static_cast<size_t>(written));
+  };
+  auto writeBoolArray = [&](const bool* values, int count) -> bool {
+    for (int i = 0; i < count; ++i) {
+      if (i > 0 && !writeChar(',')) return false;
+      if (!writeBool(values[i])) return false;
+    }
+    return true;
+  };
+  auto writeDrumPattern = [&](const DrumPattern& pattern) -> bool {
+    if (!writeLiteral("{\"hit\":[")) return false;
+    for (int i = 0; i < DrumPattern::kSteps; ++i) {
+      if (i > 0 && !writeChar(',')) return false;
+      if (!writeBool(pattern.steps[i].hit)) return false;
+    }
+    if (!writeLiteral("],\"accent\":[")) return false;
+    for (int i = 0; i < DrumPattern::kSteps; ++i) {
+      if (i > 0 && !writeChar(',')) return false;
+      if (!writeBool(pattern.steps[i].accent)) return false;
+    }
+    return writeLiteral("]}");
+  };
+  auto writeDrumBank = [&](const Bank<DrumPatternSet>& bank) -> bool {
+    if (!writeChar('[')) return false;
+    for (int p = 0; p < Bank<DrumPatternSet>::kPatterns; ++p) {
+      if (p > 0 && !writeChar(',')) return false;
+      if (!writeChar('[')) return false;
+      for (int v = 0; v < DrumPatternSet::kVoices; ++v) {
+        if (v > 0 && !writeChar(',')) return false;
+        if (!writeDrumPattern(bank.patterns[p].voices[v])) return false;
+      }
+      if (!writeChar(']')) return false;
+    }
+    return writeChar(']');
+  };
+  auto writeSynthPattern = [&](const SynthPattern& pattern) -> bool {
+    if (!writeChar('[')) return false;
+    for (int i = 0; i < SynthPattern::kSteps; ++i) {
+      if (i > 0 && !writeChar(',')) return false;
+      if (!writeLiteral("{\"note\":")) return false;
+      if (!writeInt(pattern.steps[i].note)) return false;
+      if (!writeLiteral(",\"slide\":")) return false;
+      if (!writeBool(pattern.steps[i].slide)) return false;
+      if (!writeLiteral(",\"accent\":")) return false;
+      if (!writeBool(pattern.steps[i].accent)) return false;
+      if (!writeChar('}')) return false;
+    }
+    return writeChar(']');
+  };
+  auto writeSynthBank = [&](const Bank<SynthPattern>& bank) -> bool {
+    if (!writeChar('[')) return false;
+    for (int p = 0; p < Bank<SynthPattern>::kPatterns; ++p) {
+      if (p > 0 && !writeChar(',')) return false;
+      if (!writeSynthPattern(bank.patterns[p])) return false;
+    }
+    return writeChar(']');
+  };
+
+  if (!writeChar('{')) return false;
+
+  if (!writeLiteral("\"drumBank\":")) return false;
+  if (!writeDrumBank(scene_.drumBank)) return false;
+
+  if (!writeLiteral(",\"synthABank\":")) return false;
+  if (!writeSynthBank(scene_.synthABank)) return false;
+
+  if (!writeLiteral(",\"synthBBank\":")) return false;
+  if (!writeSynthBank(scene_.synthBBank)) return false;
+
+  if (!writeLiteral(",\"song\":{")) return false;
+  int songLen = songLength();
+  if (!writeLiteral("\"length\":")) return false;
+  if (!writeInt(songLen)) return false;
+  if (!writeLiteral(",\"positions\":[")) return false;
+  for (int i = 0; i < songLen; ++i) {
+    if (i > 0 && !writeChar(',')) return false;
+    if (!writeChar('{')) return false;
+    if (!writeLiteral("\"a\":")) return false;
+    if (!writeInt(scene_.song.positions[i].patterns[0])) return false;
+    if (!writeLiteral(",\"b\":")) return false;
+    if (!writeInt(scene_.song.positions[i].patterns[1])) return false;
+    if (!writeLiteral(",\"drums\":")) return false;
+    if (!writeInt(scene_.song.positions[i].patterns[2])) return false;
+    if (!writeChar('}')) return false;
+  }
+  if (!writeChar(']')) return false;
+  if (!writeChar('}')) return false;
+
+  if (!writeLiteral(",\"state\":{")) return false;
+  if (!writeLiteral("\"drumPatternIndex\":")) return false;
+  if (!writeInt(drumPatternIndex_)) return false;
+  if (!writeLiteral(",\"bpm\":")) return false;
+  if (!writeFloat(bpm_)) return false;
+  if (!writeLiteral(",\"songMode\":")) return false;
+  if (!writeBool(songMode_)) return false;
+  if (!writeLiteral(",\"songPosition\":")) return false;
+  if (!writeInt(clampSongPosition(songPosition_))) return false;
+  if (!writeLiteral(",\"synthPatternIndex\":[")) return false;
+  if (!writeInt(synthPatternIndex_[0])) return false;
+  if (!writeChar(',')) return false;
+  if (!writeInt(synthPatternIndex_[1])) return false;
+  if (!writeChar(']')) return false;
+  if (!writeLiteral(",\"drumBankIndex\":")) return false;
+  if (!writeInt(drumBankIndex_)) return false;
+  if (!writeLiteral(",\"synthBankIndex\":[")) return false;
+  if (!writeInt(synthBankIndex_[0])) return false;
+  if (!writeChar(',')) return false;
+  if (!writeInt(synthBankIndex_[1])) return false;
+  if (!writeChar(']')) return false;
+  if (!writeLiteral(",\"mute\":{")) return false;
+  if (!writeLiteral("\"drums\":[")) return false;
+  if (!writeBoolArray(drumMute_, DrumPatternSet::kVoices)) return false;
+  if (!writeLiteral("],\"synth\":[")) return false;
+  if (!writeBoolArray(synthMute_, 2)) return false;
+  if (!writeChar(']')) return false;
+  if (!writeChar('}')) return false;
+  if (!writeLiteral(",\"synthParams\":[")) return false;
+  for (int i = 0; i < 2; ++i) {
+    if (i > 0 && !writeChar(',')) return false;
+    if (!writeLiteral("{\"cutoff\":")) return false;
+    if (!writeFloat(synthParameters_[i].cutoff)) return false;
+    if (!writeLiteral(",\"resonance\":")) return false;
+    if (!writeFloat(synthParameters_[i].resonance)) return false;
+    if (!writeLiteral(",\"envAmount\":")) return false;
+    if (!writeFloat(synthParameters_[i].envAmount)) return false;
+    if (!writeLiteral(",\"envDecay\":")) return false;
+    if (!writeFloat(synthParameters_[i].envDecay)) return false;
+    if (!writeChar('}')) return false;
+  }
+  if (!writeChar(']')) return false;
+  if (!writeChar('}')) return false;
+
+  if (!writeChar('}')) return false;
+  return true;
 }
 
 template <typename TReader>
