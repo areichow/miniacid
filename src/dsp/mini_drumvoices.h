@@ -1,10 +1,12 @@
+
 #pragma once
 #include <stdint.h>
 #include "mini_dsp_params.h"
 
-// Public parameter ids (kept for compatibility)
+// Public parameter ids (kept for compatibility + bus comp)
 enum class DrumParamId : uint8_t {
   MainVolume = 0,
+  BusCompAmount,   // 0..1 one-knob compressor
   Count
 };
 
@@ -34,7 +36,10 @@ public:
   float processRim();
   float processClap();
 
-  // Parameters (kept)
+  // Bus processing (apply one-knob compressor to the mixed sum)
+  float processBus(float mixSample);
+
+  // Parameters
   const Parameter& parameter(DrumParamId id) const;
   void setParameter(DrumParamId id, float value);
 
@@ -55,10 +60,8 @@ private:
   float snareEnvAmp;     // noise amp
   float snareToneEnv;    // tone tick
   bool  snareActive;
-  // simple state for noise filters
   float snareBp;
   float snareLp;
-  // two tone oscillators
   float snareTonePhase;
   float snareTonePhase2;
 
@@ -68,8 +71,8 @@ private:
   bool  hatActive;
   float hatHp;           // HP filter state
   float hatPrev;
-  // six square oscillators
   float hatPh[6];
+  float hatInc[6];
 
   // ----- Open Hat -----
   float openHatEnvAmp;
@@ -78,6 +81,7 @@ private:
   float openHatHp;
   float openHatPrev;
   float openHatPh[6];
+  float openHatInc[6];
 
   // ----- Toms -----
   float midTomPhase;
@@ -93,29 +97,36 @@ private:
   // ----- Rimshot -----
   float rimPhase;
   float rimEnv;
-  float rimBp;           // bandpass state
+  float rimBp;
   float rimLp;
   bool  rimActive;
 
-  // ----- Clap -----
-  float clapEnv;
-  float clapTrans;       // transient env
-  float clapNoiseSeed;   // seed per hit
+  // ----- Clap (simplified, no comb/diffusion) -----
+  float clapEnv;         // overall body envelope (longer tail)
+  float clapTrans;       // transient envelope
+  float clapTailEnv;     // separate tail envelope
+  float clapNoiseSeed;   // per-hit color
   bool  clapActive;
   float clapTime;        // seconds since trigger
-  // mini comb/reverb
-  static const int kClapBufMax = 1024;
-  float clapBuf[kClapBufMax];
-  int   clapIdx;
-  int   clapCombLen;
+
+  // noise shaper states
+  float clapHp, clapPrev;
+  float clapBp, clapLp;
 
   // Sample rate
   float sampleRate;
   float invSampleRate;
 
-  // Hat oscillator freqs (phase increments computed per sampleRate)
-  float hatInc[6];
-  float openHatInc[6];
+  // ----- One-knob Bus Compressor -----
+  float compEnv;         // detector envelope
+  float compAttackCoeff;
+  float compReleaseCoeff;
+  float compGainDb;      // smoothed gain reduction
+  float compMakeupDb;    // auto makeup (dB)
+  float compThreshDb;    // mapped from knob (-18 .. -6 dB)
+  float compRatio;       // mapped from knob (2:1 .. 6:1)
+  float compKneeDb;      // soft knee width (fixed ~6 dB)
+  float compAmount;      // 0..1 parameter cache
 
   // Global params
   Parameter params[static_cast<int>(DrumParamId::Count)];
