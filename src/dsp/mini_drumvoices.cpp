@@ -29,13 +29,9 @@ void DrumSynthVoice::reset() {
   kickActive = false;
 
   // Snare
-  snareEnvAmp = 0.0f;
-  snareToneEnv = 0.0f;
-  snareActive = false;
-  snareBp = 0.0f;
-  snareLp = 0.0f;
-  snareTonePhase = 0.0f;
-  snareTonePhase2 = 0.0f;
+  snareEnvAmp = 0.0f; snareToneEnv = 0.0f; snareActive = false;
+  snareBp = 0.0f; snareLp = 0.0f;
+  snareTonePhase = 0.0f; snareTonePhase2 = 0.0f;
 
   // Hats
   hatEnvAmp = 0.0f; hatToneEnv = 0.0f; hatActive = false;
@@ -53,10 +49,16 @@ void DrumSynthVoice::reset() {
   // Rim
   rimPhase = 0.0f; rimEnv = 0.0f; rimBp = 0.0f; rimLp = 0.0f; rimActive = false;
 
-  // Clap (simplified)
+  // Clap (revamped)
   clapEnv = 0.0f; clapTrans = 0.0f; clapTailEnv = 0.0f;
   clapNoiseSeed = 0.0f; clapActive = false; clapTime = 0.0f;
   clapHp = 0.0f; clapPrev = 0.0f; clapBp = 0.0f; clapLp = 0.0f;
+  clapBp2 = 0.0f; clapLp2 = 0.0f;
+  clapSnapPhase = 0.0f; clapSnapEnv = 0.0f;
+  clapTapIdx = 0; clapTapLen = (int)(0.020f * sampleRate) + 64; // > 19ms + margin
+  if (clapTapLen < 256) clapTapLen = 256;
+  if (clapTapLen > kClapTapBufMax) clapTapLen = kClapTapBufMax;
+  for (int i = 0; i < kClapTapBufMax; ++i) clapTapBuf[i] = 0.0f;
 
   // Bus compressor defaults
   compAmount   = 0.35f;
@@ -84,6 +86,15 @@ void DrumSynthVoice::setSampleRate(float sampleRateHz) {
     hatInc[i]     = f[i]  * invSampleRate;
     openHatInc[i] = fo[i] * invSampleRate;
   }
+
+  // Multi-tap feed-forward delays for clap cluster (in samples)
+  clapD1 = (int)(0.0045f * sampleRate); // ~4.5 ms
+  clapD2 = (int)(0.0090f * sampleRate); // ~9 ms
+  clapD3 = (int)(0.0140f * sampleRate); // ~14 ms
+  clapD4 = (int)(0.0190f * sampleRate); // ~19 ms
+  clapTapLen = (int)(0.020f * sampleRate) + 64;
+  if (clapTapLen < 256) clapTapLen = 256;
+  if (clapTapLen > kClapTapBufMax) clapTapLen = kClapTapBufMax;
 
   // Compressor coefficients (fixed times tuned for drums)
   float attackTime  = 0.005f;  // ~5 ms
@@ -116,7 +127,7 @@ void DrumSynthVoice::triggerKick() {
 
 void DrumSynthVoice::triggerSnare() {
   snareActive = true;
-  snareEnvAmp = 1.1f;
+  snareEnvAmp  = 1.1f;
   snareToneEnv = 1.0f;
   snareTonePhase = 0.0f;
   snareTonePhase2 = 0.0f;
@@ -161,14 +172,24 @@ void DrumSynthVoice::triggerRim() {
 
 void DrumSynthVoice::triggerClap() {
   clapActive    = true;
-  clapEnv       = 1.0f;   // overall body
-  clapTrans     = 1.0f;   // transient decay
-  clapTailEnv   = 0.85f;  // tail starts lower than body
+  clapEnv       = 1.0f;   // global body
+  clapTrans     = 1.0f;   // transient
+  clapTailEnv   = 0.90f;  // independent tail body
   clapNoiseSeed = frand();
   clapTime      = 0.0f;
 
-  // reset shaper states
-  clapHp = 0.0f; clapPrev = 0.0f; clapBp = 0.0f; clapLp = 0.0f;
+  // shaper states
+  clapHp = 0.0f; clapPrev = 0.0f;
+  clapBp = 0.0f; clapLp = 0.0f;
+  clapBp2 = 0.0f; clapLp2 = 0.0f;
+
+  // snap tone
+  clapSnapPhase = 0.0f;
+  clapSnapEnv   = 1.0f;
+
+  // cluster buffer
+  clapTapIdx = 0;
+  for (int i = 0; i < clapTapLen; ++i) clapTapBuf[i] = 0.0f;
 }
 
 // ---------------- Processors: Voices ----------------
@@ -198,41 +219,33 @@ float DrumSynthVoice::processKick() {
 float DrumSynthVoice::processSnare() {
   if (!snareActive)
     return 0.0f;
-
   // --- ENVELOPES ---
   // 808: Long noise decay, short tone decay
-  snareEnvAmp *= 0.9985f;   // slow decay, long tail
-  snareToneEnv *= 0.99999f;    // short tone "tick"
-
+  snareEnvAmp *= 0.9985f; // slow decay, long tail
+  snareToneEnv *= 0.99999f; // short tone "tick"
   if (snareEnvAmp < 0.0002f) {
     snareActive = false;
     return 0.0f;
   }
-
   // --- NOISE PROCESSING ---
   float n = frand(); // assume 0.0–1.0 random
-
   // 808: Noise is brighter with a bit of highpass emphasis
   // simple bandpass around ~1–2 kHz
   float f = 0.28f;
   snareBp += f * (n - snareLp - 0.20f * snareBp);
   snareLp += f * snareBp;
-
   // high fizz (808 has a lot of it)
-  float noiseHP = n - snareLp;    // crude highpass
+  float noiseHP = n - snareLp; // crude highpass
   float noiseOut = snareBp * 0.35f + noiseHP * 0.65f;
-
   // --- TONE (two sines, tuned to classic 808) ---
   // ~330 Hz + ~180 Hz slight mix, short decay
   snareTonePhase += 330.0f * invSampleRate;
   if (snareTonePhase >= 1.0f) snareTonePhase -= 1.0f;
   snareTonePhase2 += 180.0f * invSampleRate;
   if (snareTonePhase2 >= 1.0f) snareTonePhase2 -= 1.0f;
-
   float toneA = sinf(2.0f * 3.14159265f * snareTonePhase);
   float toneB = sinf(2.0f * 3.14159265f * snareTonePhase2);
   float tone = (toneA * 0.55f + toneB * 0.45f) * snareToneEnv;
-
   // --- MIX ---
   // 808: tone only supports transient, noise dominates sustain
   float out = noiseOut * 0.75f + tone * 0.65f;
@@ -343,51 +356,82 @@ float DrumSynthVoice::processRim() {
   return (tick * 0.6f + bp * 0.7f) * rimEnv * 0.9f;
 }
 
-// ---------------- Clap (simplified, longer, bright) ----------------
+// ---------------- Clap (hand-snap + multi-tap cluster, no feedback) ----------------
 float DrumSynthVoice::processClap() {
   if (!clapActive) return 0.0f;
 
   // Envelopes
   clapEnv     *= 0.99992f;  // global tail (slow)
-  clapTrans   *= 0.995f;    // transient (fast)
-  clapTailEnv *= 0.99988f;  // separate tail/body mix
+  clapTrans   *= 0.9950f;   // transient (fast)
+  clapTailEnv *= 0.99988f;  // tail/body
+  clapSnapEnv *= 0.93f;     // very fast snap decay
   clapTime    += invSampleRate;
 
-  // Stop after a reasonable duration
-  if (clapTime > 0.25f || clapEnv < 0.00025f) { clapActive = false; return 0.0f; }
+  if (clapTime > 0.28f || clapEnv < 0.0002f) { clapActive = false; return 0.0f; }
 
-  // Four burst gates (Gaussian) at ~13 ms spacing
-  const float tau = 0.0060f;            // wider = less “spiky”, more clap-like
+  // Four Gaussian bursts at ~13 ms spacing
+  const float tau = 0.0055f; // width controls "hand softness"
   const float t0  = 0.000f, t1 = 0.013f, t2 = 0.026f, t3 = 0.039f;
-  const float a0  = 1.00f,   a1 = 0.80f, a2 = 0.65f, a3 = 0.55f;
+  const float a0  = 1.00f,   a1 = 0.82f, a2 = 0.68f, a3 = 0.60f;
 
-  float burst = 0.0f;
-  float dt = clapTime - t0; burst += a0 * expf(-(dt * dt) / (tau * tau));
-  dt = clapTime - t1;       burst += a1 * expf(-(dt * dt) / (tau * tau));
-  dt = clapTime - t2;       burst += a2 * expf(-(dt * dt) / (tau * tau));
-  dt = clapTime - t3;       burst += a3 * expf(-(dt * dt) / (tau * tau));
+  float burst = 0.0f, dt = 0.0f;
+  dt = clapTime - t0; burst += a0 * expf(-(dt * dt) / (tau * tau));
+  dt = clapTime - t1; burst += a1 * expf(-(dt * dt) / (tau * tau));
+  dt = clapTime - t2; burst += a2 * expf(-(dt * dt) / (tau * tau));
+  dt = clapTime - t3; burst += a3 * expf(-(dt * dt) / (tau * tau));
 
   // White noise with per-hit color
   float w = (frand() * 0.75f + clapNoiseSeed * 0.25f);
 
-  // Simple bright shaper: high-pass + mild band-pass tilt
-  const float hpAlpha = 0.96f;                // higher => brighter
+  // Bright shaper: HP + two gentle BP bands (~1.3 kHz & ~2.2 kHz)
+  const float hpAlpha = 0.970f;     // brighter than before
   clapHp = hpAlpha * (clapHp + w - clapPrev);
   clapPrev = w;
   float hpOut = clapHp;
 
-  const float bpF = 0.31f;                    // center ~1.2–1.5 kHz, gentle Q
-  clapBp += bpF * (hpOut - clapLp - 0.25f * clapBp);
-  clapLp += bpF * clapBp;
-  float colored = clapBp * 0.68f + (hpOut - clapLp) * 0.32f;
+  const float bpF1 = 0.32f;  // ~1.3 kHz band
+  clapBp  += bpF1 * (hpOut - clapLp  - 0.25f * clapBp);
+  clapLp  += bpF1 * clapBp;
+  float band1 = clapBp * 0.65f + (hpOut - clapLp) * 0.35f;
 
-  // Body (bursts) + tail (longer, quieter)
-  float body = colored * burst * clapTrans;
-  float tail = colored * 0.55f * clapTailEnv;
+  const float bpF2 = 0.38f;  // ~2.2 kHz band (slightly brighter)
+  clapBp2 += bpF2 * (hpOut - clapLp2 - 0.22f * clapBp2);
+  clapLp2 += bpF2 * clapBp2;
+  float band2 = clapBp2 * 0.60f + (hpOut - clapLp2) * 0.40f;
 
-  float y = (body + tail) * clapEnv;
+  // Short tonal "snap" around 1.5 kHz (very brief)
+  clapSnapPhase += 1500.0f * invSampleRate; if (clapSnapPhase >= 1.0f) clapSnapPhase -= 1.0f;
+  float snapTone = sinf(2.0f * 3.14159265f * clapSnapPhase) * clapSnapEnv;
 
-  return y;
+  // Body signal: bursts + snap
+  float colored = band1 * 0.58f + band2 * 0.42f;
+  float body = (colored * burst * clapTrans) + (snapTone * 0.45f * burst);
+
+  // Tail (longer, quieter) to make it read as a clap rather than a noise blip
+  float tail = (band1 * 0.50f + band2 * 0.35f) * clapTailEnv;
+
+  // Feed-forward multi-tap cluster: emulate multiple hands (no feedback)
+  // y = body + a1*x[n-d1] + a2*x[n-d2] + a3*x[n-d3] + a4*x[n-d4] + tail
+  // Write body into ring buffer, then read taps.
+  clapTapBuf[clapTapIdx] = body;
+  int idx = clapTapIdx;
+  int i1 = idx - clapD1; if (i1 < 0) i1 += clapTapLen;
+  int i2 = idx - clapD2; if (i2 < 0) i2 += clapTapLen;
+  int i3 = idx - clapD3; if (i3 < 0) i3 += clapTapLen;
+  int i4 = idx - clapD4; if (i4 < 0) i4 += clapTapLen;
+
+  float y = body
+          + clapTapBuf[i1] * 0.60f
+          + clapTapBuf[i2] * 0.45f
+          + clapTapBuf[i3] * 0.30f
+          + clapTapBuf[i4] * 0.20f
+          + tail;
+
+  // advance ring index
+  clapTapIdx++; if (clapTapIdx >= clapTapLen) clapTapIdx = 0;
+
+  // global body envelope
+  return y * clapEnv;
 }
 
 // ---------------- Bus Compressor ----------------

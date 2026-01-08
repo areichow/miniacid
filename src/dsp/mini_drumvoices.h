@@ -1,4 +1,3 @@
-
 #pragma once
 #include <stdint.h>
 #include "mini_dsp_params.h"
@@ -40,7 +39,7 @@ public:
   float processBus(float mixSample);
 
   // Snare
-  float snareHpPrev;   // extra high-pass memory
+  float snareHpPrev; // extra high-pass memory
 
   // Parameters
   const Parameter& parameter(DrumParamId id) const;
@@ -104,9 +103,9 @@ private:
   float rimLp;
   bool  rimActive;
 
-  // ----- Clap (simplified, no comb/diffusion) -----
+  // ----- Clap (revamped) -----
   float clapEnv;         // overall body envelope (longer tail)
-  float clapTrans;       // transient envelope
+  float clapTrans;       // transient envelope (fast)
   float clapTailEnv;     // separate tail envelope
   float clapNoiseSeed;   // per-hit color
   bool  clapActive;
@@ -114,7 +113,19 @@ private:
 
   // noise shaper states
   float clapHp, clapPrev;
-  float clapBp, clapLp;
+  float clapBp, clapLp;      // ~1.3 kHz region
+  float clapBp2, clapLp2;    // ~2.2 kHz region
+
+  // tonal snap (very short)
+  float clapSnapPhase;
+  float clapSnapEnv;
+
+  // feed-forward multi-tap cluster (no feedback; safe on ESP)
+  static const int kClapTapBufMax = 1024;
+  float clapTapBuf[kClapTapBufMax];
+  int   clapTapIdx;
+  int   clapD1, clapD2, clapD3, clapD4; // sample delays
+  int   clapTapLen;                      // ring size (<= kClapTapBufMax)
 
   // Sample rate
   float sampleRate;
