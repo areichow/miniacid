@@ -772,14 +772,16 @@ void MiniAcid::generateAudioBuffer(int16_t *buffer, size_t numSamples) {
       samplesIntoStep++;
     }
 
-    float sample = 0.0f;
+    float sampleOut = 0.0f;
+
     if (playing) {
+      // ---- 303 voices (with tempo delay) ----
       float sample303 = 0.0f;
       if (!mute303) {
         float v = voice303.process() * 0.5f;
         sample303 += delay303.process(v);
       } else {
-        // keep delay line ticking even while muted to let tails decay
+        // keep delay.line ticking so tails decay naturally
         delay303.process(0.0f);
       }
       if (!mute303_2) {
@@ -788,36 +790,36 @@ void MiniAcid::generateAudioBuffer(int16_t *buffer, size_t numSamples) {
       } else {
         delay3032.process(0.0f);
       }
-      if (!muteKick)
-        sample += drums.processKick();
-      if (!muteSnare)
-        sample += drums.processSnare();
-      if (!muteHat)
-        sample += drums.processHat();
-      if (!muteOpenHat)
-        sample += drums.processOpenHat();
-      if (!muteMidTom)
-        sample += drums.processMidTom();
-      if (!muteHighTom)
-        sample += drums.processHighTom();
-      if (!muteRim)
-        sample += drums.processRim();
-      if (!muteClap)
-        sample += drums.processClap();
-      sample += sample303;
+
+      // ---- DRUM BUS (sum all drums, then bus-comp) ----
+      float drumSum = 0.0f;
+      if (!muteKick)    drumSum += drums.processKick();
+      if (!muteSnare)   drumSum += drums.processSnare();
+      if (!muteHat)     drumSum += drums.processHat();
+      if (!muteOpenHat) drumSum += drums.processOpenHat();
+      if (!muteMidTom)  drumSum += drums.processMidTom();
+      if (!muteHighTom) drumSum += drums.processHighTom();
+      if (!muteRim)     drumSum += drums.processRim();
+      if (!muteClap)    drumSum += drums.processClap();
+
+      // Bus compressor applies to the whole DRUM MIX
+      // if you want to compress the entire mix (drums+303), move the processBus() call after sampleOut = drumSum + sample303.
+      // drumSum = drums.processBus(drumSum);
+
+      // ---- Mix drums + 303 ----
+      sampleOut = drumSum + sample303;
+      
+      // uncomment to use bus comp on the whole mix
+      sampleOut = drums.processBus(sampleOut);
     }
 
     // Soft clipping/limiting
-    sample *= 0.65f;
-    if (sample > 1.0f)
-      sample = 1.0f;
-    if (sample < -1.0f)
-      sample = -1.0f;
-
+    sampleOut *= 0.65f;
+    if (sampleOut > 1.0f)  sampleOut = 1.0f;
+    if (sampleOut < -1.0f) sampleOut = -1.0f;
 
     float currentVolume = params[static_cast<int>(MiniAcidParamId::MainVolume)].value();
-    buffer[i] = static_cast<int16_t>(sample * 32767.0f * currentVolume);
-
+    buffer[i] = static_cast<int16_t>(sampleOut * 32767.0f * currentVolume);
   }
 
   size_t copyCount = numSamples;
