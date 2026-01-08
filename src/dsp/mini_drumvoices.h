@@ -36,9 +36,6 @@ public:
   float processRim();
   float processClap();     // updated
 
-  // NEW: per-sample drum bus (sums all voices, runs bus comp, applies MainVolume)
-  float processFrame();
-
   // Bus processing (apply one-knob compressor to any mix sample)
   float processBus(float mixSample);
 

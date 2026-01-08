@@ -466,25 +466,7 @@ float DrumSynthVoice::processClap() {
   return y * clapEnv;
 }
 
-// ---------------- NEW: per-sample drum bus ----------------
-// Sums all voices, runs bus compressor, applies MainVolume
-float DrumSynthVoice::processFrame() {
-  float mix = 0.0f;
-  mix += processKick();
-  mix += processSnare();
-  mix += processClap();
-  mix += processHat();
-  mix += processOpenHat();
-  mix += processMidTom();
-  mix += processHighTom();
-  mix += processRim();
-
-  mix = processBus(mix);  // bus comp on the whole drum mix
-  mix *= params[static_cast<int>(DrumParamId::MainVolume)].value();
-  return mix;
-}
-
-// ---------------- Bus Compressor ----------------
+// Bus Compressor
 float DrumSynthVoice::processBus(float mixSample) {
   // Update parameter cache (in case UI changed it)
   compAmount   = params[static_cast<int>(DrumParamId::BusCompAmount)].value();
