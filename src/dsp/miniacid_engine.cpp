@@ -803,12 +803,12 @@ void MiniAcid::generateAudioBuffer(int16_t *buffer, size_t numSamples) {
 
       // Bus compressor can be applied to the whole mix, or just the drums
       // uncoment the line below to process the drums w/ the bus comp
-      // drumSum = drums.processBus(drumSum);
+      drumSum = drums.processBus(drumSum);
 
       sampleOut = drumSum + sample303;
       
       // uncomment to use bus comp on the whole mix
-      sampleOut = drums.processBus(sampleOut);
+      // sampleOut = drums.processBus(sampleOut);
     }
 
     // soft clipping/limiting
