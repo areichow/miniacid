@@ -291,6 +291,79 @@ void PatternEditPage::transposePatternSemitone(int delta) {
   }
 }
 
+// --- rotation + duplication ---
+void PatternEditPage::rotatePattern(int dir) {
+  // dir: +1 = forward (right), -1 = backward (left)
+  const int8_t* notes = mini_acid_.pattern303Steps(voice_index_);
+  const bool* accent = mini_acid_.pattern303AccentSteps(voice_index_);
+  const bool* slide  = mini_acid_.pattern303SlideSteps(voice_index_);
+  if (!notes || !accent || !slide) return;
+
+  int8_t nbuf[SEQ_STEPS];
+  bool   abuf[SEQ_STEPS];
+  bool   sbuf[SEQ_STEPS];
+
+  int len = SEQ_STEPS;
+  for (int j = 0; j < len; ++j) {
+    int src = (j - dir) % len;
+    if (src < 0) src += len;
+    nbuf[j] = notes[src];
+    abuf[j] = accent[src];
+    sbuf[j] = slide[src];
+  }
+
+  const bool* accentCur = accent;
+  const bool* slideCur  = slide;
+  for (int j = 0; j < len; ++j) {
+    int cur = currentStepNote(j);
+    int tgt = nbuf[j];
+    if (tgt < 0) {
+      if (cur >= 0) withAudioGuard([&]() { mini_acid_.clear303StepNote(voice_index_, j); });
+    } else {
+      if (cur < 0) setEmptyStepToAbsoluteNote(j, tgt);
+      else {
+        int delta = tgt - cur;
+        if (delta != 0) withAudioGuard([&]() { mini_acid_.adjust303StepNote(voice_index_, j, delta); });
+        rememberLastNoteFromStep(j);
+      }
+    }
+    // accent/slide reconcile
+    if (accentCur) { bool have = accentCur[j]; bool want = abuf[j]; if (have != want) withAudioGuard([&]() { mini_acid_.toggle303AccentStep(voice_index_, j); }); }
+    if (slideCur)  { bool have = slideCur[j];  bool want = sbuf[j]; if (have != want) withAudioGuard([&]() { mini_acid_.toggle303SlideStep(voice_index_, j);  }); }
+  }
+}
+
+void PatternEditPage::duplicateTopRowToBottomRow() {
+  const int8_t* notes = mini_acid_.pattern303Steps(voice_index_);
+  const bool* accent = mini_acid_.pattern303AccentSteps(voice_index_);
+  const bool* slide  = mini_acid_.pattern303SlideSteps(voice_index_);
+  if (!notes || !accent || !slide) return;
+
+  for (int i = 0; i < 8; ++i) {
+    int dst = i + 8;
+    int cur = currentStepNote(dst);
+    int tgt = notes[i];
+    if (tgt < 0) {
+      if (cur >= 0) withAudioGuard([&]() { mini_acid_.clear303StepNote(voice_index_, dst); });
+    } else {
+      if (cur < 0) setEmptyStepToAbsoluteNote(dst, tgt);
+      else {
+        int delta = tgt - cur;
+        if (delta != 0) withAudioGuard([&]() { mini_acid_.adjust303StepNote(voice_index_, dst, delta); });
+        rememberLastNoteFromStep(dst);
+      }
+    }
+    // accent/slide
+    const bool wantA = accent[i];
+    const bool haveA = accent[dst];
+    if (wantA != haveA) withAudioGuard([&]() { mini_acid_.toggle303AccentStep(voice_index_, dst); });
+
+    const bool wantS = slide[i];
+    const bool haveS = slide[dst];
+    if (wantS != haveS) withAudioGuard([&]() { mini_acid_.toggle303SlideStep(voice_index_, dst); });
+  }
+}
+
 // --- event handling ---
 bool PatternEditPage::handleEvent(UIEvent& ui_event) {
   if (ui_event.event_type != MINIACID_KEY_DOWN) return false;
@@ -352,31 +425,22 @@ bool PatternEditPage::handleEvent(UIEvent& ui_event) {
     }
   };
 
-  // Cut/Copy/Paste: ASCII control codes first, fallback to V/B/M
-  unsigned char ucharKey = static_cast<unsigned char>(key);
-  if (ucharKey == 0x18 /*^X*/ || std::tolower(ucharKey) == 'v') { // Cut
-    cutCurrentPatternToBuffer();
-    return true;
-  }
-  if (ucharKey == 0x03 /*^C*/ || std::tolower(ucharKey) == 'b') { // Copy
-    copyCurrentPatternToBuffer();
-    return true;
-  }
-  if (ucharKey == 0x16 /*^V*/ || std::tolower(ucharKey) == 'n') { // Paste
-    pasteBufferToCurrentPattern();
-    return true;
-  }
+  // Cut/Copy/Paste mapped to V (cut), B (copy), N (paste)
+  char lowerKey = static_cast<char>(std::tolower(static_cast<unsigned char>(key)));
+  if (lowerKey == 'v') { cutCurrentPatternToBuffer(); return true; }
+  if (lowerKey == 'b') { copyCurrentPatternToBuffer(); return true; }
+  if (lowerKey == 'n') { pasteBufferToCurrentPattern(); return true; }
 
   // Transpose entire pattern
-  char lowerKey = static_cast<char>(std::tolower(static_cast<unsigned char>(key)));
-  if (lowerKey == 'h') { // transpose up
-    transposePatternSemitone(+1);
-    return true;
-  }
-  if (lowerKey == 'j') { // transpose down
-    transposePatternSemitone(-1);
-    return true;
-  }
+  if (lowerKey == 'h') { transposePatternSemitone(+1); return true; }
+  if (lowerKey == 'j') { transposePatternSemitone(-1); return true; }
+
+  // Rotation: 'f' = backward (left), 'g' = forward (right)
+  if (lowerKey == 'f') { rotatePattern(-1); return true; }
+  if (lowerKey == 'g') { rotatePattern(+1); return true; }
+
+  // Duplicate: 'd' = copy top row (0..7) to bottom row (8..15)
+  if (lowerKey == 'd') { duplicateTopRowToBottomRow(); return true; }
 
   // per-step edits
   switch (lowerKey) {

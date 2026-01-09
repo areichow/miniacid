@@ -48,6 +48,10 @@ class PatternEditPage : public IPage {
   // transpose helpers
   void transposePatternSemitone(int delta);
 
+  // rotation + duplication
+  void rotatePattern(int dir);            // dir = +1 forward, -1 backward
+  void duplicateTopRowToBottomRow();
+
   IGfx& gfx_;
   MiniAcid& mini_acid_;
   AudioGuard& audio_guard_;
