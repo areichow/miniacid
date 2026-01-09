@@ -1,5 +1,6 @@
 #pragma once
-
+#include <functional>
+#include <vector>
 #include "../ui_core.h"
 #include "../ui_colors.h"
 #include "../ui_utils.h"
@@ -27,6 +28,26 @@ class DrumSequencerPage : public IPage {
   int patternIndexFromKey(char key) const;
   void withAudioGuard(const std::function<void()>& fn);
 
+  // pattern ops
+  void copyCurrentDrumPatternToBuffer();
+  void cutCurrentDrumPatternToBuffer();
+  void pasteBufferToCurrentDrumPattern();
+  void transposeDrumInstruments(int dir);   // dir = +1 up, -1 down
+  void rotateDrumSteps(int dir);            // dir = +1 forward (right), -1 backward (left)
+  void duplicateTopRowToBottomRow();        // steps 0..7 -> 8..15 for all voices
+
+  // undo/redo
+  struct DrumPatternState {
+    bool hits[NUM_DRUM_VOICES][SEQ_STEPS];
+  };
+  static constexpr int kMaxHistory = 64;
+  void captureCurrentDrumPattern(DrumPatternState& out) const;
+  void applyDrumPatternState(const DrumPatternState& st);
+  void pushUndo();
+  void clearRedo();
+  bool undo();
+  bool redo();
+
   IGfx& gfx_;
   MiniAcid& mini_acid_;
   AudioGuard& audio_guard_;
@@ -36,4 +57,14 @@ class DrumSequencerPage : public IPage {
   bool drum_pattern_focus_;
   int help_page_index_ = 0;
   int total_help_pages_ = 1;
+
+  // buffer
+  struct DrumBuffer {
+    bool has_data = false;
+    bool hits[NUM_DRUM_VOICES][SEQ_STEPS] = { {false} };
+  } buffer_;
+
+  // undo/redo stacks
+  std::vector<DrumPatternState> undo_stack_;
+  std::vector<DrumPatternState> redo_stack_;
 };
