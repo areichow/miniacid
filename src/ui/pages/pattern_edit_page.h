@@ -1,5 +1,6 @@
 #pragma once
-#include <functional>         // for std::function
+#include <functional>
+#include <vector>
 #include "../ui_core.h"
 #include "../ui_colors.h"
 #include "../ui_utils.h"
@@ -52,6 +53,20 @@ class PatternEditPage : public IPage {
   void rotatePattern(int dir);            // dir = +1 forward, -1 backward
   void duplicateTopRowToBottomRow();
 
+  // --- undo/redo ---
+  struct PatternState {
+    int8_t notes[SEQ_STEPS];
+    bool accent[SEQ_STEPS];
+    bool slide[SEQ_STEPS];
+  };
+  static constexpr int kMaxHistory = 64;
+  void captureCurrentPattern(PatternState& out) const;
+  void applyPatternState(const PatternState& st);
+  void pushUndo();
+  void clearRedo();
+  bool undo();
+  bool redo();
+
   IGfx& gfx_;
   MiniAcid& mini_acid_;
   AudioGuard& audio_guard_;
@@ -72,4 +87,8 @@ class PatternEditPage : public IPage {
     bool accent[SEQ_STEPS] = {false};
     bool slide[SEQ_STEPS] = {false};
   } buffer_;
+
+  // undo/redo stacks
+  std::vector<PatternState> undo_stack_;
+  std::vector<PatternState> redo_stack_;
 };
