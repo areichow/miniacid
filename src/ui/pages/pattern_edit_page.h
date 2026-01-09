@@ -1,5 +1,5 @@
 #pragma once
-
+#include <functional>         // for std::function
 #include "../ui_core.h"
 #include "../ui_colors.h"
 #include "../ui_utils.h"
@@ -27,10 +27,26 @@ class PatternEditPage : public IPage {
  private:
   enum class Focus { Steps = 0, PatternRow };
 
+  // helpers / state
   int clampCursor(int cursorIndex) const;
   int patternIndexFromKey(char key) const;
   void ensureStepFocus();
   void withAudioGuard(const std::function<void()>& fn);
+
+  // last-note memory
+  void rememberLastNoteFromStep(int step);
+  int currentStepNote(int step) const;
+
+  // absolute set for empty steps (uses existing adjust APIs safely)
+  void setEmptyStepToAbsoluteNote(int step, int target_note);
+
+  // cut/copy/paste helpers
+  void copyCurrentPatternToBuffer();
+  void cutCurrentPatternToBuffer();
+  void pasteBufferToCurrentPattern();
+
+  // transpose helpers
+  void transposePatternSemitone(int delta);
 
   IGfx& gfx_;
   MiniAcid& mini_acid_;
@@ -42,4 +58,14 @@ class PatternEditPage : public IPage {
   int help_page_index_ = 0;
   int total_help_pages_ = 1;
   std::string title_;
+
+  // new state: last note memory & pattern buffer
+  int last_entered_note_ = -1; // -1 = none yet
+
+  struct PatternBuffer {
+    bool has_data = false;
+    int8_t notes[SEQ_STEPS] = {0};
+    bool accent[SEQ_STEPS] = {false};
+    bool slide[SEQ_STEPS] = {false};
+  } buffer_;
 };

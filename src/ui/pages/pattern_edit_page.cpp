@@ -1,8 +1,7 @@
 #include "pattern_edit_page.h"
-
 #include <cctype>
 #include <cstdio>
-
+#include <cstring> // memcpy
 #include "../help_dialog.h"
 
 PatternEditPage::PatternEditPage(IGfx& gfx, MiniAcid& mini_acid, AudioGuard& audio_guard, int voice_index)
@@ -179,8 +178,123 @@ bool PatternEditPage::hasHelpDialog() {
   return true;
 }
 
+// --- helpers for last note + buffer + transpose ---
+
+int PatternEditPage::currentStepNote(int step) const {
+  const int8_t* notes = mini_acid_.pattern303Steps(voice_index_);
+  if (!notes) return -1;
+  if (step < 0 || step >= SEQ_STEPS) return -1;
+  return notes[step];
+}
+
+void PatternEditPage::rememberLastNoteFromStep(int step) {
+  int n = currentStepNote(step);
+  if (n >= 0) last_entered_note_ = n;
+}
+
+// Sets an empty step to an absolute note using existing adjust APIs.
+// Strategy: nudge from known engine default (C#1 or C2) and then adjust by delta-to-target.
+void PatternEditPage::setEmptyStepToAbsoluteNote(int step, int target_note) {
+  if (target_note < 0) {
+    withAudioGuard([&]() { mini_acid_.clear303StepNote(voice_index_, step); });
+    return;
+  }
+  // Prime the step from empty: a +1 semitone turns empty into base C#1.
+  withAudioGuard([&]() { mini_acid_.adjust303StepNote(voice_index_, step, 1); });
+  int cur = currentStepNote(step);
+  int delta = target_note - cur;
+  if (delta != 0) {
+    withAudioGuard([&]() { mini_acid_.adjust303StepNote(voice_index_, step, delta); });
+  }
+  rememberLastNoteFromStep(step);
+}
+
+void PatternEditPage::copyCurrentPatternToBuffer() {
+  const int8_t* notes = mini_acid_.pattern303Steps(voice_index_);
+  const bool* accent = mini_acid_.pattern303AccentSteps(voice_index_);
+  const bool* slide  = mini_acid_.pattern303SlideSteps(voice_index_);
+  if (!notes || !accent || !slide) return;
+  std::memcpy(buffer_.notes, notes, sizeof(buffer_.notes));
+  std::memcpy(buffer_.accent, accent, sizeof(buffer_.accent));
+  std::memcpy(buffer_.slide,  slide,  sizeof(buffer_.slide));
+  buffer_.has_data = true;
+}
+
+void PatternEditPage::cutCurrentPatternToBuffer() {
+  copyCurrentPatternToBuffer();
+  // Clear notes, accent, slide
+  for (int i = 0; i < SEQ_STEPS; ++i) {
+    int n = currentStepNote(i);
+    if (n >= 0) {
+      withAudioGuard([&]() { mini_acid_.clear303StepNote(voice_index_, i); });
+    }
+    const bool* accent = mini_acid_.pattern303AccentSteps(voice_index_);
+    const bool* slide  = mini_acid_.pattern303SlideSteps(voice_index_);
+    if (accent && accent[i]) {
+      withAudioGuard([&]() { mini_acid_.toggle303AccentStep(voice_index_, i); });
+    }
+    if (slide && slide[i]) {
+      withAudioGuard([&]() { mini_acid_.toggle303SlideStep(voice_index_, i); });
+    }
+  }
+}
+
+void PatternEditPage::pasteBufferToCurrentPattern() {
+  if (!buffer_.has_data) return;
+  const bool* accentCur = mini_acid_.pattern303AccentSteps(voice_index_);
+  const bool* slideCur  = mini_acid_.pattern303SlideSteps(voice_index_);
+  for (int i = 0; i < SEQ_STEPS; ++i) {
+    int cur = currentStepNote(i);
+    int tgt = buffer_.notes[i];
+    if (tgt < 0) {
+      if (cur >= 0) {
+        withAudioGuard([&]() { mini_acid_.clear303StepNote(voice_index_, i); });
+      }
+    } else {
+      if (cur < 0) {
+        // from empty → absolute
+        setEmptyStepToAbsoluteNote(i, tgt);
+      } else {
+        int delta = tgt - cur;
+        if (delta != 0) {
+          withAudioGuard([&]() { mini_acid_.adjust303StepNote(voice_index_, i, delta); });
+        }
+        rememberLastNoteFromStep(i);
+      }
+    }
+    // Accent reconcile
+    if (accentCur) {
+      bool want = buffer_.accent[i];
+      bool have = accentCur[i];
+      if (want != have) {
+        withAudioGuard([&]() { mini_acid_.toggle303AccentStep(voice_index_, i); });
+      }
+    }
+    // Slide reconcile
+    if (slideCur) {
+      bool want = buffer_.slide[i];
+      bool have = slideCur[i];
+      if (want != have) {
+        withAudioGuard([&]() { mini_acid_.toggle303SlideStep(voice_index_, i); });
+      }
+    }
+  }
+}
+
+void PatternEditPage::transposePatternSemitone(int delta) {
+  if (delta == 0) return;
+  for (int i = 0; i < SEQ_STEPS; ++i) {
+    int n = currentStepNote(i);
+    if (n >= 0) {
+      withAudioGuard([&]() { mini_acid_.adjust303StepNote(voice_index_, i, delta); });
+    }
+  }
+}
+
+// --- event handling ---
 bool PatternEditPage::handleEvent(UIEvent& ui_event) {
   if (ui_event.event_type != MINIACID_KEY_DOWN) return false;
+
   bool handled = false;
   switch (ui_event.scancode) {
     case MINIACID_LEFT:
@@ -207,6 +321,7 @@ bool PatternEditPage::handleEvent(UIEvent& ui_event) {
   char key = ui_event.key;
   if (!key) return false;
 
+  // Enter on pattern row commits pattern selection
   if ((key == '\n' || key == '\r') && patternRowFocused()) {
     if (mini_acid_.songModeEnabled()) return true;
     int cursor = activePatternCursor();
@@ -218,8 +333,8 @@ bool PatternEditPage::handleEvent(UIEvent& ui_event) {
   int patternIdx = patternIndexFromKey(key);
   bool patternKeyReserved = false;
   if (patternIdx >= 0) {
-    char lowerKey = static_cast<char>(std::tolower(static_cast<unsigned char>(key)));
-    patternKeyReserved = (lowerKey == 'q' || lowerKey == 'w');
+    char lowerKeyForPattern = static_cast<char>(std::tolower(static_cast<unsigned char>(key)));
+    patternKeyReserved = (lowerKeyForPattern == 'q' || lowerKeyForPattern == 'w');
     if (!patternKeyReserved || patternRowFocused()) {
       if (mini_acid_.songModeEnabled()) return true;
       focusPatternRow();
@@ -237,52 +352,123 @@ bool PatternEditPage::handleEvent(UIEvent& ui_event) {
     }
   };
 
+  // Cut/Copy/Paste: ASCII control codes first, fallback to V/B/M
+  unsigned char ucharKey = static_cast<unsigned char>(key);
+  if (ucharKey == 0x18 /*^X*/ || std::tolower(ucharKey) == 'v') { // Cut
+    cutCurrentPatternToBuffer();
+    return true;
+  }
+  if (ucharKey == 0x03 /*^C*/ || std::tolower(ucharKey) == 'b') { // Copy
+    copyCurrentPatternToBuffer();
+    return true;
+  }
+  if (ucharKey == 0x16 /*^V*/ || std::tolower(ucharKey) == 'n') { // Paste
+    pasteBufferToCurrentPattern();
+    return true;
+  }
+
+  // Transpose entire pattern
   char lowerKey = static_cast<char>(std::tolower(static_cast<unsigned char>(key)));
+  if (lowerKey == 'h') { // transpose up
+    transposePatternSemitone(+1);
+    return true;
+  }
+  if (lowerKey == 'j') { // transpose down
+    transposePatternSemitone(-1);
+    return true;
+  }
+
+  // per-step edits
   switch (lowerKey) {
-    case 'q': {
+    case 'q': { // slide toggle
       ensureStepFocusAndCursor();
       int step = activePatternStep();
       withAudioGuard([&]() { mini_acid_.toggle303SlideStep(voice_index_, step); });
       return true;
     }
-    case 'w': {
+    case 'w': { // accent toggle
       ensureStepFocusAndCursor();
       int step = activePatternStep();
       withAudioGuard([&]() { mini_acid_.toggle303AccentStep(voice_index_, step); });
       return true;
     }
-    case 'a': {
+    case 'a': { // note + (with last-note on empty)
       ensureStepFocusAndCursor();
       int step = activePatternStep();
-      withAudioGuard([&]() { mini_acid_.adjust303StepNote(voice_index_, step, 1); });
+      int cur = currentStepNote(step);
+      if (cur < 0) {
+        if (last_entered_note_ >= 0) {
+          setEmptyStepToAbsoluteNote(step, last_entered_note_);
+        } else {
+          // original behavior
+          withAudioGuard([&]() { mini_acid_.adjust303StepNote(voice_index_, step, 1); });
+          rememberLastNoteFromStep(step);
+        }
+      } else {
+        withAudioGuard([&]() { mini_acid_.adjust303StepNote(voice_index_, step, 1); });
+        rememberLastNoteFromStep(step);
+      }
       return true;
     }
-    case 'z': {
+    case 'z': { // note - (with last-note on empty)
       ensureStepFocusAndCursor();
       int step = activePatternStep();
-      withAudioGuard([&]() { mini_acid_.adjust303StepNote(voice_index_, step, -1); });
+      int cur = currentStepNote(step);
+      if (cur < 0) {
+        if (last_entered_note_ >= 0) {
+          setEmptyStepToAbsoluteNote(step, last_entered_note_);
+        } else {
+          // keep empty (no-op)
+        }
+      } else {
+        withAudioGuard([&]() { mini_acid_.adjust303StepNote(voice_index_, step, -1); });
+        rememberLastNoteFromStep(step);
+      }
       return true;
     }
-    case 's': {
+    case 's': { // octave + (with last-note+octave on empty)
       ensureStepFocusAndCursor();
       int step = activePatternStep();
-      withAudioGuard([&]() { mini_acid_.adjust303StepOctave(voice_index_, step, 1); });
+      int cur = currentStepNote(step);
+      if (cur < 0) {
+        if (last_entered_note_ >= 0) {
+          setEmptyStepToAbsoluteNote(step, last_entered_note_ + 12);
+        } else {
+          // original behavior
+          withAudioGuard([&]() { mini_acid_.adjust303StepOctave(voice_index_, step, 1); });
+          rememberLastNoteFromStep(step);
+        }
+      } else {
+        withAudioGuard([&]() { mini_acid_.adjust303StepOctave(voice_index_, step, 1); });
+        rememberLastNoteFromStep(step);
+      }
       return true;
     }
-    case 'x': {
+    case 'x': { // octave - (with last-note-octave on empty)
       ensureStepFocusAndCursor();
       int step = activePatternStep();
-      withAudioGuard([&]() { mini_acid_.adjust303StepOctave(voice_index_, step, -1); });
+      int cur = currentStepNote(step);
+      if (cur < 0) {
+        if (last_entered_note_ >= 0) {
+          setEmptyStepToAbsoluteNote(step, last_entered_note_ - 12);
+        } else {
+          // keep empty (no-op)
+        }
+      } else {
+        withAudioGuard([&]() { mini_acid_.adjust303StepOctave(voice_index_, step, -1); });
+        rememberLastNoteFromStep(step);
+      }
       return true;
     }
     default:
       break;
   }
 
-  if (key == '\b') {
+  if (key == '\b') { // backspace = clear step
     ensureStepFocusAndCursor();
     int step = activePatternStep();
     withAudioGuard([&]() { mini_acid_.clear303StepNote(voice_index_, step); });
+    // keep last_entered_note_ unchanged
     return true;
   }
 
@@ -290,7 +476,6 @@ bool PatternEditPage::handleEvent(UIEvent& ui_event) {
 }
 
 void PatternEditPage::draw(IGfx& gfx, int x, int y, int w, int h) {
-
   int body_y = y + 2;
   int body_h = h - 2;
   if (body_h <= 0) return;
@@ -298,6 +483,7 @@ void PatternEditPage::draw(IGfx& gfx, int x, int y, int w, int h) {
   const int8_t* notes = mini_acid_.pattern303Steps(voice_index_);
   const bool* accent = mini_acid_.pattern303AccentSteps(voice_index_);
   const bool* slide = mini_acid_.pattern303SlideSteps(voice_index_);
+
   int stepCursor = pattern_edit_cursor_;
   int playing = mini_acid_.currentStep();
   int selectedPattern = mini_acid_.display303PatternIndex(voice_index_);
@@ -334,7 +520,7 @@ void PatternEditPage::draw(IGfx& gfx, int x, int y, int w, int h) {
       gfx.drawRect(cell_x - 2, pattern_row_y - 2, pattern_size + 4, pattern_size_height + 4, COLOR_STEP_SELECTED);
     }
     char label[4];
-    snprintf(label, sizeof(label), "%d", i + 1);
+    std::snprintf(label, sizeof(label), "%d", i + 1);
     int tw = textWidth(gfx, label);
     int tx = cell_x + (pattern_size - tw) / 2;
     int ty = pattern_row_y + pattern_size_height / 2 - gfx.fontHeight() / 2;
@@ -349,7 +535,6 @@ void PatternEditPage::draw(IGfx& gfx, int x, int y, int w, int h) {
   int indicator_h = 5;
   int indicator_gap = 1;
   int row_height = indicator_h + indicator_gap + cell_size + 4;
-
   for (int i = 0; i < SEQ_STEPS; ++i) {
     int row = i / 8;
     int col = i % 8;
