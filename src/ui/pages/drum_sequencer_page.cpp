@@ -324,7 +324,7 @@ bool DrumSequencerPage::handleEvent(UIEvent& ui_event) {
   if (lowerKey == 'j') { if (undo()) return true; }
   if (lowerKey == 'm') { if (redo()) return true; }
   if (key == '\\')   { cutCurrentDrumPatternToBuffer(); return true; }
-  if (key == '\'\'') { duplicateTopRowToBottomRow(); return true; }
+  if (key == '\'') { duplicateTopRowToBottomRow(); return true; }
 
   return false;
 }
