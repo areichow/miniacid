@@ -1,6 +1,10 @@
-# fork: ajrAcid
+# DEPRECATED - please see [ajrAcid](https://github.com/areichow/ajrAcid/) for further developments!
 
-This is a personal fork of MiniAcid, a tiny acid groovebox for the M5Stack Cardputer. I've forked it to make some changes and make this awesome little app more to my liking. A huge THANK YOU to [urtubia](https://github.com/urtubia/) for developing this and sharing it with the world! The UI is excellent, it's well thought out.
+I'm archiving this for project for now - pleaes see ajrAcid for my current work. I'm new to using git and made a lot of n00b mistakes when putting making my changes. I've created a new project on github - ajrAcid - that is better set up for submitting patches to the [original project](https://github.com/urtubia/miniacid). My changes are now derived from miniacid 0.0.7-dev. urtubia has a lot of cool changes in the works, and many of my changes became moot. 
+
+[ajrAcid](https://github.com/areichow/ajrAcid/) is incorporating many of my previous changes, and some new ones as well. I'll be uploading .bin files that are ready to be used on the CardPuter ADV as well!
+
+---
 
 DONE:
 - Simple bus compressor for the drums to increase punch
